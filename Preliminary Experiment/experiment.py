@@ -116,7 +116,7 @@ def heatplot(Xs, Ys, Zs):
 if __name__ == '__main__':
     # configure the function
 
-    image_name = "cb90"
+    image_name = ""
     cnt = 1
 
     # determine the allocation plan

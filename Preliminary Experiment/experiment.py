@@ -1,9 +1,10 @@
+import numpy as np
+import matplotlib.pyplot as plt
 import os
 import time
 
 import matplotlib
-import matplotlib.pyplot as plt
-import numpy as np
+matplotlib.use('Agg')
 
 matplotlib.use('TKAgg')
 
@@ -11,12 +12,14 @@ matplotlib.use('TKAgg')
 def configure(alloc):
     container_name = []
 
-    # create a number of containers according to the allocation plan 
+    # create a number of containers according to the allocation plan
 
     for i in range(0, len(alloc)):
         try:
-            cmd = "docker run -d -t " + image_name + \
-                " -m " + str(alloc[j][0]) + " --cpus=" + str(alloc[j][1])
+            cmd = "docker run -d -t " + " --cpus=" + \
+                str(alloc[j][0]) + " -m " + \
+                str(alloc[j][1])+"M" + " " + image_name
+            print(cmd)
             output = os.popen(cmd)
             name = output.readlines()
             container_name.append(name[0])
@@ -63,7 +66,6 @@ def experiment(container_name, cnt, alloc):
             # store the result in "experiment_result"
 
             experiment_result[str(alloc[j])] = runtime
-            
 
     data = [0]*len(alloc)
 
@@ -94,8 +96,10 @@ def heatplot(Xs, Ys, Zs):
 
     # Show all ticks and label them with the respective list entries
 
-    ax.set_xticks(np.arange(len(Xs)), labels=cpu_alloc)
-    ax.set_yticks(np.arange(len(Ys)), labels=m_alloc)
+    ax.set_xticks(np.arange(len(Xs)))
+    ax.set_yticks(np.arange(len(Ys)))
+    plt.xlabel('cpu_alloc')
+    plt.ylabel('m_alloc')
 
     # Rotate the tick labels and set their alignment
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
@@ -110,19 +114,19 @@ def heatplot(Xs, Ys, Zs):
 
     ax.set_title("the Runtime of containers")
     fig.tight_layout()
-    plt.show()
+    plt.savefig('EX2_plot.png', bbox_inches='tight')
 
 
 if __name__ == '__main__':
     # configure the function
 
-    image_name = ""
+    image_name = "ex2"
     cnt = 1
 
     # determine the allocation plan
 
-    cpu_alloc = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
-    m_alloc = [128, 256, 512, 768, 1024, 2048]
+    cpu_alloc = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 3, 4]
+    m_alloc = [2048, 1024, 768, 512, 256, 128]
     alloc = []
 
     for i in range(0, len(cpu_alloc)):

@@ -4,36 +4,46 @@ from typing import List
 from priority_queue import *
 
 
+cpu_base = 2
+mem_base = 256
 one_step_cpu = 0.25
 one_step_mem = 64
 
 
-class docker_container(object):
+class DockerContainer(object):
+
+    # A self-defined docker api
+
     def __init__(self, image_name):
 
-        self.cpu_alloc = 0.25
-        self.mem_alloc = 64
+        self.cpu_alloc = cpu_base
+        self.mem_alloc = mem_base
 
-        flag = True
+        out_of_mem = True
 
-        while flag == True:
+        while out_of_mem == True:
             try:
                 cmd = "docker run -d -t " + image_name+" -m " + \
                     str(self.mem_alloc) + " --cpus=" + str(self.cpu_alloc)
                 output = os.popen(cmd)
-                flag = False
+                out_of_mem = False
 
-            # if the execution fails, give the function more memories
+            # If the execution fails, double the memory
 
             except:
-                self.mem_alloc += one_step_mem
+                self.mem_alloc *= 2
 
         self.container_name = output.readlines()[0]
 
         self.curr_runtime = 0
         self.last_runtime = 0
 
+        self.init_container()
+
     def init_container(self):
+
+        # Restart these containers to get the runtime
+
         cmd = "docker restart " + self.container_name
 
         start = time.perf_counter()
@@ -43,11 +53,17 @@ class docker_container(object):
         self.curr_runtime = int(end - start)
 
     def set_runtime(self, runtime):
+
+        # Set both the current runtime and the last runtime
+
         self.last_runtime = self.curr_runtime
         self.curr_runtime = runtime
 
-    def one_step_cpu_alloc(self):
-        self.cpu_alloc += one_step_cpu
+    def one_step_cpu_dealloc(self, cpu_alloc=one_step_cpu):
+
+        # Deallocate containers' CPU and get runtime
+
+        self.cpu_alloc -= cpu_alloc
 
         cmd = "docker update --cpus " + \
             str(self.cpu_alloc) + self.container_name
@@ -62,10 +78,13 @@ class docker_container(object):
         runtime = int(end - start)
         self.set_runtime(runtime)
 
-    def one_step_mem_alloc(self):
-        self.mem_alloc += one_step_mem
+    def one_step_mem_dealloc(self, mem_alloc=one_step_mem):
 
-        cmd = "docker update --cpus " + \
+        # Deallocate containers' CPU and get runtime
+
+        self.mem_alloc -= mem_alloc
+
+        cmd = "docker update -m " + \
             str(self.mem_alloc) + self.container_name
         os.system(cmd)
 
@@ -78,9 +97,20 @@ class docker_container(object):
         runtime = int(end - start)
         self.set_runtime(runtime)
 
+
 class Workflow(object):
-    def __init__(self, containers: List[docker_container]):
-        self.workflow = containers
+
+    # Monitoring docker workflow
+
+    def __init__(self, images, slo):
+
+        self.slo = slo
+
+        self.workflow = []
+
+        for image in images:
+            container = DockerContainer(image)
+            self.workflow.append(container)
 
         self.cpu_pq = PriorityQueue()
         self.mem_pq = PriorityQueue()
@@ -89,45 +119,55 @@ class Workflow(object):
         for func in self.workflow:
             self.runtime += func.curr_runtime
 
-        self.init_cpu_alloc
-        self.init_mem_alloc
+            self.cpu_pq.push(func, 0)
+            self.mem_pq.push(func, 0)
 
-    def init_cpu_alloc(self):
-        for func in self.workflow:
-            func.one_step_cpu_alloc()
+        self.max_config()
+
+    def max_config(self):
+
+        # Double the resources until we meet the SLO
+
+        while self.runtime > self.slo:
+
+            # Double the cpu
+
+            func = self.cpu_pq.pop()
+            cpu_alloc = func.cpu_alloc
+            func.one_step_cpu_dealloc(-cpu_alloc)
+
+            prioirty = (func.curr_runtime - func.last_runtime)/cpu_alloc
+            self.cpu_pq.push(func, prioirty)
+
             self.runtime += func.curr_runtime - func.last_runtime
 
-        self.init_cpu_queue()
-        
-    def init_mem_alloc(self):
-        for func in self.workflow:
-            func.one_step_mem_alloc()
+            # Double the mem
+
+            func = self.mem_pq.pop()
+            mem_alloc = func.mem_alloc
+            func.one_step_mem_dealloc(-mem_alloc)
+
+            prioirty = (func.curr_runtime - func.last_runtime)/mem_alloc
+            self.mem_pq.push(func, prioirty)
+
             self.runtime += func.curr_runtime - func.last_runtime
 
-        self.init_mem_queue()
+    def one_step_cpu_dealloc(self, cpu_alloc=one_step_cpu):
 
-
-    def init_cpu_queue(self):
-
-        for func in self.workflow:
-            prioirty = func.curr_runtime - func.last_runtime
-            self.cpu_pq.push((func, prioirty))
-            self.mem_pq.push((func, prioirty))
-
-    def init_mem_queue(self):
-
-        for func in self.workflow:
-            prioirty = func.curr_runtime - func.last_runtime
-            self.mem_pq.push((func, prioirty))
-
-    def one_step_cpu_alloc(self):
         func = self.cpu_pq.pop()
+        func.one_step_cpu_dealloc(cpu_alloc)
 
-        func.one_step_cpu_alloc()
+        prioirty = (func.last_runtime - func.curr_runtime)/cpu_alloc
+        self.cpu_pq.push(func, prioirty)
+
         self.runtime += func.curr_runtime - func.last_runtime
 
-    def one_step_mem_alloc(self):
-        func = self.mem_pq.pop()
+    def mem_base_alloc(self, mem_alloc=one_step_mem):
 
-        func.one_step_mem_alloc()
+        func = self.mem_pq.pop()
+        func.one_step_mem_dealloc(mem_alloc)
+
+        priority = (func.last_runtime - func.curr_runtime)/mem_alloc
+        self.mem_pq.push(func, priority)
+
         self.runtime += func.curr_runtime - func.last_runtime

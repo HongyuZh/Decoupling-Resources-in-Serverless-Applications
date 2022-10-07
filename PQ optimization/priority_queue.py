@@ -6,18 +6,19 @@ class PriorityQueue(object):
         self._index = 0
 
     def push(self, item, priority):
-        """
-        This queue's elements are like (priority, index, priority)
-        """
-        heapq.heappush(self._queue,(-priority, self._index, item))
+
+        # This queue's elements are like (priority, index, priority)
+
+        heapq.heappush(self._queue,(priority, self._index, item))
         self._index += 1
 
     def pop(self):
+
+        # Pop the one with the least priority
+
         return heapq.heappop(self._queue)[-1]
 
     def qsize(self):
+
         return len(self._queue)
 
-    def isempty(self):
-        return True if not self._queue else False
-        

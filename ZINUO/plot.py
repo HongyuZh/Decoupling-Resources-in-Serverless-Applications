@@ -1,8 +1,14 @@
 import argparse
 
-import matplotlib
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+
+mpl.rcParams['font.size'] = 16
+mpl.rcParams['ytick.labelsize'] = 20
+mpl.rcParams['xtick.labelsize'] = 20
+mpl.rcParams['axes.labelsize'] = 20
+mpl.rcParams['font.sans-serif'] = 'Arial'
 
 
 def heatmap(data, row_labels, col_labels, ax=None,
@@ -105,7 +111,7 @@ def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
 
     # Get the formatter in case a string is supplied
     if isinstance(valfmt, str):
-        valfmt = matplotlib.ticker.StrMethodFormatter(valfmt)
+        valfmt = mpl.ticker.StrMethodFormatter(valfmt)
 
     # Loop over the data and create a `Text` for each "pixel".
     # Change the text's color depending on the data.
@@ -141,8 +147,8 @@ if __name__ == '__main__':
     fig, ax = plt.subplots()
 
     im, cbar = heatmap(data, np.array(m_alloc), np.array(cpu_alloc), ax=ax,
-                       cmap="OrRd", cbarlabel="Execution Time (ms)")
+                       cmap="Reds", cbarlabel="Execution Time (ms)")
     texts = annotate_heatmap(im, valfmt="{x: .0f}")
 
     fig.tight_layout()
-    plt.savefig(f'{image_name}.png')
+    plt.savefig(f'{image_name}.pdf')

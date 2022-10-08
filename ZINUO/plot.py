@@ -3,12 +3,14 @@ import argparse
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+import yaml
 
 mpl.rcParams['font.size'] = 16
 mpl.rcParams['ytick.labelsize'] = 20
 mpl.rcParams['xtick.labelsize'] = 20
 mpl.rcParams['axes.labelsize'] = 20
 mpl.rcParams['font.sans-serif'] = 'Arial'
+mpl.rcParams['figure.figsize'] = (8, 8)
 
 
 def heatmap(data, row_labels, col_labels, ax=None,
@@ -127,22 +129,25 @@ def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-n', '--name', help='image name', required=True)
+    parser.add_argument('-c', '--config', help='config file', required=True)
 
     args = parser.parse_args()
 
-    image_name = args.name
+    config_file = args.config
+    with open(config_file, 'r', encoding='utf-8') as f:
+        cfgs = yaml.safe_load(f)
 
     # determine the allocation plan
-    cpu_alloc = [1, 2, 4, 8, 16]
-    m_alloc = [256, 128, 64, 32, 16]
+    cpu_alloc = cfgs['cpu_alloc']
+    m_alloc = cfgs['m_alloc']
+    image_name = f'{cfgs["name"]}:{cfgs["tag"]}'
     alloc = []
 
     for j in range(len(m_alloc)):
         for i in range(len(cpu_alloc)):
             alloc.append([cpu_alloc[i], m_alloc[j]])
 
-    data = np.loadtxt(f'{image_name}.txt')[1:].mean(axis=0).reshape(len(m_alloc), len(cpu_alloc))
+    data = np.loadtxt(f'results/{image_name}.txt')[1:].mean(axis=0).reshape(len(m_alloc), len(cpu_alloc))
 
     fig, ax = plt.subplots()
 
@@ -151,4 +156,4 @@ if __name__ == '__main__':
     texts = annotate_heatmap(im, valfmt="{x: .0f}")
 
     fig.tight_layout()
-    plt.savefig(f'{image_name}.pdf')
+    plt.savefig(f'results/{image_name}.pdf')

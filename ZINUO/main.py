@@ -3,6 +3,7 @@ import time
 
 import docker
 import numpy as np
+import yaml
 
 client = docker.from_env()
 image_name = ''
@@ -30,7 +31,8 @@ def configure(alloc):
                                           detach=True,
                                           mem_limit=f'{alloc[i][1]}M',
                                           cpu_period=100000,
-                                          cpu_quota=int(alloc[i][0] * 100000))
+                                          cpu_quota=int(alloc[i][0] * 100000),
+                                          memswap_limit=-1)
 
         container_name.append(container.short_id)
 
@@ -67,25 +69,30 @@ def experiment(container_name, cnt, alloc):
 
         if container_name[j] != 'null':
             for i in range(cnt + 1):
-                result[i, j] = int(logs[i].split(':')[-1])
+                try:
+                    result[i, j] = int(logs[i].split(':')[-1])
+                except:
+                    result[i, j] = -1
 
-    np.savetxt(f'{image_name}.txt', result, fmt='%d')
+    np.savetxt(f'results/{image_name}.txt', result, fmt='%d')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-n', '--name', help='image name', required=True)
-    parser.add_argument('-c', '--count', help='repeated times', required=True)
+    parser.add_argument('-c', '--config', help='config file', required=True)
 
     args = parser.parse_args()
 
-    # configure the function
-    image_name = args.name
-    cnt = int(args.count)
+    config_file = args.config
+    with open(config_file, 'r', encoding='utf-8') as f:
+        cfgs = yaml.safe_load(f)
+
+    cnt = cfgs['cnt']
 
     # determine the allocation plan
-    cpu_alloc = [1, 2, 4, 8, 16]
-    m_alloc = [256, 128, 64, 32, 16]
+    cpu_alloc = cfgs['cpu_alloc']
+    m_alloc = cfgs['m_alloc']
+    image_name = f'{cfgs["name"]}:{cfgs["tag"]}'
     alloc = []
 
     for j in range(len(m_alloc)):

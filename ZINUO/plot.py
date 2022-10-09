@@ -10,7 +10,6 @@ mpl.rcParams['ytick.labelsize'] = 20
 mpl.rcParams['xtick.labelsize'] = 20
 mpl.rcParams['axes.labelsize'] = 20
 mpl.rcParams['font.sans-serif'] = 'Arial'
-mpl.rcParams['figure.figsize'] = (8, 8)
 
 
 def heatmap(data, row_labels, col_labels, ax=None,
@@ -152,7 +151,7 @@ if __name__ == '__main__':
     fig, ax = plt.subplots()
 
     im, cbar = heatmap(data, np.array(m_alloc), np.array(cpu_alloc), ax=ax,
-                       cmap="Reds", cbarlabel="Execution Time (ms)")
+                       cmap="OrRd", cbarlabel="Execution Time (ms)")
     texts = annotate_heatmap(im, valfmt="{x: .0f}")
 
     fig.tight_layout()

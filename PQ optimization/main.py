@@ -1,6 +1,9 @@
-from docker_container import *
 import argparse
+
 import yaml
+
+from docker_container import *
+
 
 def PQ_optimization(images, slo):
 

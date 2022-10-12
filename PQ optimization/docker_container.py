@@ -1,13 +1,31 @@
-import os
+import math
 import time
-from typing import List
-from priority_queue import *
+from http import client
 
+import docker
+
+from priority_queue import *
 
 cpu_base = 2
 mem_base = 256
 one_step_cpu = 0.25
 one_step_mem = 64
+cost_model = {'cpu_para': 128, 'mem_para': 1}
+
+client = docker.from_env()
+
+
+def wait_complete():
+    # attentioon: before the execution of a container, we should guarantee that there is no
+    # other containers are running. otherwise, the time accuracy will be affected
+    while True:
+        active_containers = client.containers.list()
+
+        if len(active_containers) == 0:
+            break
+        else:
+            # sleep for 2 seconds
+            time.sleep(2)
 
 
 class DockerContainer(object):
@@ -16,86 +34,108 @@ class DockerContainer(object):
 
     def __init__(self, image_name):
 
+        # Initial configuration
+
+        self.image_name = image_name
         self.cpu_alloc = cpu_base
         self.mem_alloc = mem_base
 
-        out_of_mem = True
+        # Simply use the current allocation to create a container and get its id
 
-        while out_of_mem == True:
-            try:
-                cmd = "docker run -d -t " + image_name+" -m " + \
-                    str(self.mem_alloc) + " --cpus=" + str(self.cpu_alloc)
-                output = os.popen(cmd)
-                out_of_mem = False
-
-            # If the execution fails, double the memory
-
-            except:
-                self.mem_alloc *= 2
-
-        self.container_name = output.readlines()[0]
+        self.container_id = self._init_container()
 
         self.curr_runtime = 0
         self.last_runtime = 0
+        self.curr_cost = 0
+        self.last_cost = 0
 
-        self.init_container()
+    def _init_container(self):
 
-    def init_container(self):
+        # Object: Pre-warming the container.
+        # Create the container and return its id.
 
-        # Restart these containers to get the runtime
+        container = client.containers.run(self.image_name,
+                                          detach=True,
+                                          mem_limit=f'{self.mem_alloc}M',
+                                          cpu_period=100000,
+                                          cpu_quota=(self.cpu_alloc * 100000),
+                                          memswap_limit=-1)
 
-        cmd = "docker restart " + self.container_name
+        print("Info: container:{} of image:{} is created, with cpu:{} and memory{}. \n",
+              container.short_id, self.image_name, self.cpu_alloc, self.mem_alloc)
 
-        start = time.perf_counter()
-        os.system(cmd)
-        end = time.perf_counter()
+        return container.short_id
 
-        self.curr_runtime = int(end - start)
+    def docker_run(self):
 
-    def set_runtime(self, runtime):
+        # Restart the container and get its runtime
+
+        wait_complete()
+
+        container = client.containers.get(self.container_id)
+        container.restart()
+
+        log = str(container.logs(), encoding='utf-8').strip()
+        # print(logs)
+
+        try:
+            runtime = int(log.split(':')[-1])
+        except:
+            print("Error: couldn't get runtime. \n")
+            return
+
+        return runtime
+
+    def _set_runtime(self, runtime):
 
         # Set both the current runtime and the last runtime
 
         self.last_runtime = self.curr_runtime
         self.curr_runtime = runtime
 
+    def _set_cost(self):
+
+        # Using the cost model to calculate the cost
+
+        self.last_cost = self.curr_cost
+        self.curr_cost = (self.cpu_alloc * cost_model['cpu_para'] +
+                          self.mem_alloc*cost_model['mem_para']) * self.curr_runtime
+
     def one_step_cpu_dealloc(self, cpu_alloc=one_step_cpu):
 
-        # Deallocate containers' CPU and get runtime
+        # Deallocate containers' CPU
+        # And update runtime and cost
+
+        if (cpu_alloc > self.cpu_alloc):
+            print("Error: can't set cpu a negative number. \n")
+            return
 
         self.cpu_alloc -= cpu_alloc
+        container = client.containers.get(self.container_id)
+        container.update(cpu_quota=(self.cpu_alloc*100000))
 
-        cmd = "docker update --cpus " + \
-            str(self.cpu_alloc) + self.container_name
-        os.system(cmd)
+        runtime = self.docker_run()
 
-        cmd = "docker restart " + self.container_name
-
-        start = time.perf_counter()
-        os.system(cmd)
-        end = time.perf_counter()
-
-        runtime = int(end - start)
-        self.set_runtime(runtime)
+        self._set_runtime(runtime)
+        self._set_cost()
 
     def one_step_mem_dealloc(self, mem_alloc=one_step_mem):
 
-        # Deallocate containers' CPU and get runtime
+        # Deallocate containers' memory
+        # And update runtime and cost
+
+        if (mem_alloc > self.mem_alloc):
+            print("Error: can't set memory a negative number. \n")
+            return
 
         self.mem_alloc -= mem_alloc
+        container = client.containers.get(self.container_id)
+        container.update(mem_limit=f'{self.mem_alloc}M')
 
-        cmd = "docker update -m " + \
-            str(self.mem_alloc) + self.container_name
-        os.system(cmd)
+        runtime = self.docker_run()
 
-        cmd = "docker restart " + self.container_name
-
-        start = time.perf_counter()
-        os.system(cmd)
-        end = time.perf_counter()
-
-        runtime = int(end - start)
-        self.set_runtime(runtime)
+        self._set_runtime(runtime)
+        self._set_cost()
 
 
 class Workflow(object):
@@ -104,70 +144,154 @@ class Workflow(object):
 
     def __init__(self, images, slo):
 
-        self.slo = slo
+        self.time_limit = slo
 
         self.workflow = []
-
         for image in images:
             container = DockerContainer(image)
             self.workflow.append(container)
 
-        self.cpu_pq = PriorityQueue()
-        self.mem_pq = PriorityQueue()
+        # This class has three priority queue
 
-        self.runtime = 0
+        self.runtime_pq = PriorityQueue()
+        self.cost_pq = PriorityQueue()
+
+        self._init_runtime_pq()
+        self._max_config()
+        self._init_cost_pq()
+
+    def get_runtime(self):
+
+        # Get the runtime of the workflow as the sum of each function's runtime
+
+        runtime = 0
         for func in self.workflow:
-            self.runtime += func.curr_runtime
+            runtime += func.curr_runtime
 
-            self.cpu_pq.push(func, 0)
-            self.mem_pq.push(func, 0)
+        return runtime
 
-        self.max_config()
+    def get_cost(self):
 
-    def max_config(self):
+        # Get the cost of the workflow as the sum of each function's cost
 
-        # Double the resources until we meet the SLO
+        cost = 0
+        for func in self.workflow:
+            cost += func.curr_cost
 
-        while self.runtime > self.slo:
+        return cost
 
-            # Double the cpu
+    def _init_runtime_pq(self):
 
-            func = self.cpu_pq.pop()
-            cpu_alloc = func.cpu_alloc
-            func.one_step_cpu_dealloc(-cpu_alloc)
+        # Define the element in the runtime pq to be {'function': xxx, 'type': xxx}
 
-            prioirty = (func.curr_runtime - func.last_runtime)/cpu_alloc
-            self.cpu_pq.push(func, prioirty)
+        for func in self.workflow:
+            item_cpu = {'function': func, 'type': 'cpu'}
+            item_mem = {'function': func, 'type': 'memory'}
 
-            self.runtime += func.curr_runtime - func.last_runtime
+            self.runtime_pq.push(item_cpu, math.inf)
+            self.runtime_pq.push(item_mem, math.inf)
 
-            # Double the mem
+    def _max_config(self):
 
-            func = self.mem_pq.pop()
-            mem_alloc = func.mem_alloc
-            func.one_step_mem_dealloc(-mem_alloc)
+        # First get the function with the highest priority
 
-            prioirty = (func.curr_runtime - func.last_runtime)/mem_alloc
-            self.mem_pq.push(func, prioirty)
+        item = self.runtime_pq.pop()
+        func = item['function']
+        type = item['type']
 
-            self.runtime += func.curr_runtime - func.last_runtime
+        # Increase the resources until we meet the SLO
 
-    def one_step_cpu_dealloc(self, cpu_alloc=one_step_cpu):
+        try:
+            runtime = self.get_runtime()
+            while runtime > self.time_limit:
 
-        func = self.cpu_pq.pop()
-        func.one_step_cpu_dealloc(cpu_alloc)
+                # According to its type, choose different operation
 
-        prioirty = (func.last_runtime - func.curr_runtime)/cpu_alloc
-        self.cpu_pq.push(func, prioirty)
+                if type == 'cpu':
 
-        self.runtime += func.curr_runtime - func.last_runtime
+                    func.one_step_cpu_dealloc(-cpu_base)
 
-    def mem_base_alloc(self, mem_alloc=one_step_mem):
+                    # Push into the queue
 
-        func = self.mem_pq.pop()
-        func.one_step_mem_dealloc(mem_alloc)
+                    item = item = {'function': func, 'type': type}
+                    prioirty = func.curr_runtime - func.last_runtime
+                    self.runtime_pq.push(item, prioirty)
 
-        priority = (func.last_runtime - func.curr_runtime)/mem_alloc
-        self.mem_pq.push(func, priority)
+                if type == 'memory':
 
-        self.runtime += func.curr_runtime - func.last_runtime
+                    func.one_step_mem_dealloc(-mem_base)
+
+                    # Push into the queue
+
+                    item = item = {'function': func, 'type': type}
+                    prioirty = func.curr_runtime - func.last_runtime
+                    self.runtime_pq.push(item, prioirty)
+
+                runtime += func.curr_runtime - func.last_runtime
+
+        except:
+            print("Error: can't meet the time limit. \n")
+            return
+
+        print("Info: current configuration: \n")
+        for func in self.workflow:
+            print("function:{} of image:{}, with cpu:{} and memory:{}. \n",
+                  func.container_id, func.image_name, func.cpu_alloc, func.mem_alloc)
+
+    def _init_cost_pq(self):
+
+        # Define the element in the cost pq to be {'function': xxx, 'type': xxx}
+
+        for func in self.workflow:
+            item_cpu = {'function': func, 'type': 'cpu'}
+            item_mem = {'function': func, 'type': 'memory'}
+
+            self.cost_pq.push(item_cpu, math.inf)
+            self.cost_pq.push(item_mem, math.inf)
+
+        cost = self.get_cost()
+        print('Info: Cost_pq has been initialized. Current cost is {}. \n', cost)
+
+    def one_step_operator(self, cpu_alloc=one_step_cpu, mem_alloc=one_step_mem):
+
+        # First get the function with the highest priority
+
+        item = self.cost_pq.pop()
+        func = item['function']
+        type = item['type']
+
+        # According to its type, choose different operation
+        # If slo isn't meet after the deallocation,
+        # restore the configuration
+        # and the function won't come back to the queue again
+
+        if type == 'cpu':
+
+            print("Info: deallocate cpu of  function:{} by {}. \n",
+                  func.container_id, cpu_alloc)
+
+            func.one_step_cpu_dealloc(cpu_alloc)
+            if self.get_runtime() > self.time_limit:
+                print("Runtime is too long! Retrive the deallocation. \n")
+                func.cpu_alloc += cpu_alloc
+            else:
+                item = {'function': func, 'type': type}
+                priority = func.last_cost - func.curr_cost
+                self.cost_pq.push(item, priority)
+
+        if type == 'memory':
+
+            print("Info: deallocate memory of  function:{} by {}. \n",
+                  func.container_id, mem_alloc)
+
+            func.one_step_mem_dealloc(mem_alloc)
+            if self.get_runtime() > self.time_limit:
+                print("Runtime is too long! Retrive the deallocation. \n")
+                func.mem_alloc += mem_alloc
+            else:
+                item = {'function': func, 'type': type}
+                priority = func.last_cost - func.curr_cost
+                self.cost_pq.push(item, priority)
+
+        cost = self.get_cost()
+        print("Info: current cost is {}. \n", cost)

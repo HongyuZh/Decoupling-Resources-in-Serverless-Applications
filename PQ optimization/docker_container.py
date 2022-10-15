@@ -54,8 +54,8 @@ class DockerContainer(object):
                                           cpu_quota=(self.cpu_alloc * 100000),
                                           memswap_limit=-1)
 
-        print("Info: container:{} of image:{} is created, with cpu:{} and memory{}. \n",
-              container.short_id, self.image_name, self.cpu_alloc, self.mem_alloc)
+        print("Info: container:%s of image:%s is created, with cpu:%.2f and memory:%d."
+              % (container.short_id, self.image_name, self.cpu_alloc, self.mem_alloc))
 
         return container.short_id
 
@@ -67,13 +67,15 @@ class DockerContainer(object):
         container = client.containers.get(self.container_id)
         container.restart()
 
+        wait_complete()
+
         log = str(container.logs(), encoding='utf-8').strip()
         # print(logs)
 
         try:
             runtime = int(log.split(':')[-1])
         except:
-            print("Error: couldn't get runtime. \n")
+            print("Error: couldn't get runtime.")
             return
 
         self.last_runtime = self.curr_runtime
@@ -89,7 +91,7 @@ class DockerContainer(object):
         # Deallocate containers' CPU and memory
         # And update runtime and cost
         if (cpu_alloc > self.cpu_alloc & mem_alloc > self.mem_alloc):
-            print("Error: can't set cpu/memory a negative number. \n")
+            print("Error: can't set cpu/memory a negative number.")
             return
 
         self.cpu_alloc -= cpu_alloc
@@ -98,6 +100,11 @@ class DockerContainer(object):
         container.update(cpu_quota=(self.cpu_alloc*100000),
                          mem_limit=f'{self.mem_alloc}M')
 
+        self.run_and_set_runtime()
+        self._set_cost()
+
+    def update(self):
+        # Update runtime and cost
         self.run_and_set_runtime()
         self._set_cost()
 
@@ -139,6 +146,8 @@ class Workflow(object):
     def _init_runtime_pq(self):
         # Define the element in the runtime pq to be {'function': xxx, 'type': xxx}
         for func in self.workflow:
+            func.update()
+
             item_cpu = {'function': func, 'type': 'cpu'}
             item_mem = {'function': func, 'type': 'memory'}
 
@@ -175,13 +184,16 @@ class Workflow(object):
                 runtime += func.curr_runtime - func.last_runtime
 
         except:
-            print("Error: can't meet the time limit. \n")
+            print("Error: can't meet the time limit.")
             return
 
-        print("Info: current configuration: \n")
+        print("\nInfo: current configuration:\n")
         for func in self.workflow:
-            print("function:{} of image:{}, with cpu:{} and memory:{}. \n",
-                  func.container_id, func.image_name, func.cpu_alloc, func.mem_alloc)
+            print("function:%s of image:%s, with cpu:%.2f and memory:%d."
+                  % (func.container_id, func.image_name, func.cpu_alloc, func.mem_alloc))
+
+        runtime = self.get_runtime()
+        print("\nInfo: current runtime: %.2f" % (runtime))
 
     def _init_cost_pq(self):
         # Define the element in the cost pq to be {'function': xxx, 'type': xxx}
@@ -193,7 +205,7 @@ class Workflow(object):
             self.cost_pq.push(item_mem, math.inf)
 
         cost = self.get_cost()
-        print('Info: Cost_pq has been initialized. Current cost is {}. \n', cost)
+        print('\nInfo: Cost_pq has been initialized. Current cost is %.2f.\n' % (cost))
 
     def min_cost(self, cpu_alloc=one_step_cpu, mem_alloc=one_step_mem):
         try:
@@ -209,12 +221,12 @@ class Workflow(object):
                 # and the function won't come back to the queue again
                 if type == 'cpu':
 
-                    print("Info: deallocate cpu of  function:{} by {}. \n",
-                          func.container_id, cpu_alloc)
+                    print("Info: deallocate cpu of  function:%s by %.2f."
+                          % (func.container_id, cpu_alloc))
 
                     func.one_step_dealloc(cpu_alloc, 0)
                     if self.get_runtime() > self.time_limit:
-                        print("Runtime is too long! Retrive the deallocation. \n")
+                        print("Runtime is too long! Retrive the deallocation.")
                         func.cpu_alloc += cpu_alloc
                     else:
                         item = {'function': func, 'type': type}
@@ -223,12 +235,12 @@ class Workflow(object):
 
                 if type == 'memory':
 
-                    print("Info: deallocate memory of  function:{} by {}. \n",
-                          func.container_id, mem_alloc)
+                    print("Info: deallocate memory of  function:%s by %d."
+                          % (func.container_id, mem_alloc))
 
                     func.one_step_dealloc(0, mem_alloc)
                     if self.get_runtime() > self.time_limit:
-                        print("Runtime is too long! Retrive the deallocation. \n")
+                        print("Runtime is too long! Retrive the deallocation.")
                         func.mem_alloc += mem_alloc
                     else:
                         item = {'function': func, 'type': type}
@@ -238,4 +250,4 @@ class Workflow(object):
             pass
 
         cost = self.get_cost()
-        print("Info: current cost is {}. \n", cost)
+        print("Info: current cost is %.2f." % (cost))

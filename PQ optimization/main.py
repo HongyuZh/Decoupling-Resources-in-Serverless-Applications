@@ -6,13 +6,13 @@ from docker_container import *
 
 def PQ_optimization(images, slo):
 
-    print("Initializing workflow...")
+    print("Initializing workflow...\n")
     DAG = Workflow(images, slo)
-    print("Complete!")
+    print("\nComplete!\n")
 
-    print("Configuration start!")
+    print("Configuration start!\n")
     DAG.min_cost()
-    print("Complete!")
+    print("\nComplete!")
 
 if __name__ == '__main__':
     # Get configuration

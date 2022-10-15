@@ -102,12 +102,12 @@ class DockerContainer(object):
         try:
 
             container = client.containers.run(self.image_name,
-                                            detach=True,
-                                            mem_limit=f'{self.mem_alloc}M',
-                                            cpu_period=100000,
-                                            cpu_quota=(
-                                                self.cpu_alloc * 100000),
-                                            memswap_limit=-1)
+                                              detach=True,
+                                              mem_limit=f'{self.mem_alloc}M',
+                                              cpu_period=100000,
+                                              cpu_quota=int(
+                                                  self.cpu_alloc * 100000),
+                                              memswap_limit=-1)
             self.container_id = container.short_id
 
         except:
@@ -247,7 +247,7 @@ class Workflow(object):
                 # and the function won't come back to the queue again
                 if type == 'cpu':
 
-                    print("Info: deallocate cpu of function-%s by %.2f."
+                    print("Info: deallocate cpu from function-%s by %.2f."
                           % (func.container_id, cpu_alloc))
 
                     func.one_step_dealloc(cpu_alloc, 0)
@@ -263,7 +263,7 @@ class Workflow(object):
 
                 if type == 'memory':
 
-                    print("Info: deallocate memory of function-%s by %d."
+                    print("Info: deallocate memory from function-%s by %d."
                           % (func.container_id, mem_alloc))
 
                     func.one_step_dealloc(0, mem_alloc)

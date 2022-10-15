@@ -1,0 +1,6 @@
+images:
+  - {'name': 'matmul','tag':'v1'}
+  - {'name': 'matmul','tag':'v1'}
+  - {'name': 'matmul','tag':'v1'}
+  
+slo: 1000

@@ -8,11 +8,11 @@ def PQ_optimization(images, slo):
 
     print("Initializing workflow...\n")
     DAG = Workflow(images, slo)
-    print("\nComplete!\n")
+    print("Initialization complete!\n")
 
-    print("Configuration start!\n")
+    print("Configuration starts!\n")
     DAG.min_cost()
-    print("\nComplete!")
+    print("\nConfiguration complete!")
 
 if __name__ == '__main__':
     # Get configuration

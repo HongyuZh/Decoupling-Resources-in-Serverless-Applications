@@ -1,4 +1,6 @@
 images:
-  - {'name': ,'tag':}
+  - {'name': 'chameleon','tag':'v1'}
+  - {'name': 'linpack','tag':'v1'}
+  - {'name': 'matmul','tag':'v1'}
   
-slo:
+slo: 20000

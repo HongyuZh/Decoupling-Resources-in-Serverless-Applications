@@ -24,3 +24,6 @@ class PriorityQueue(object):
 
         return heapq.heappop(self._queue)[-1]
 
+    def notEmpty(self):
+        return len(self._queue) > 0
+

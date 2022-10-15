@@ -1,5 +1,4 @@
 import argparse
-
 import yaml
 
 from docker_container import *
@@ -12,11 +11,11 @@ def PQ_optimization(images, slo):
     print("Complete!")
 
     print("Configuration start!")
-    while DAG.get_runtime() < slo:
-        DAG.one_step_operator()
+    DAG.min_cost()
     print("Complete!")
 
 if __name__ == '__main__':
+    # Get configuration
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', help='config file', required=True)
 
@@ -27,7 +26,6 @@ if __name__ == '__main__':
         cfgs = yaml.safe_load(f)
 
     slo = cfgs['slo']
-
     image_names = []
     for ele in cfgs['images']:
         image_names.append(f'{ele["name"]}:{ele["tag"]}')

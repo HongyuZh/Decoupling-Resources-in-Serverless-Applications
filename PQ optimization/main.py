@@ -11,8 +11,11 @@ def PQ_optimization(images, slo):
     print("Initialization complete!\n")
 
     print("Configuration starts!\n")
-    DAG.min_cost()
-    print("\nConfiguration complete!")
+    res = DAG.min_cost()
+    if res == 'Error':
+        print("\nConfiguration failed!")
+    else:
+        print("\nConfiguration completed!")
 
 if __name__ == '__main__':
     # Get configuration

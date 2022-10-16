@@ -6,12 +6,13 @@ import docker
 from priority_queue import *
 
 cpu_base = 2
-mem_base = 64
-
+mem_base = 128
 one_step_cpu = 0.25
-one_step_mem = 64
+one_step_mem = 16
 
-cost_model = {'cpu_para': 128, 'mem_para': 1}
+cost_model = {'cpu_para': 64, 'mem_para': 1}
+
+trial = 2
 
 client = docker.from_env()
 
@@ -31,11 +32,12 @@ def wait_complete():
 
 class DockerContainer(object):
     # A self-defined docker api
-    def __init__(self, image_name):
+    def __init__(self, image_name, idx):
         # Initial configuration
         self.image_name = image_name
         self.cpu_alloc = cpu_base
         self.mem_alloc = mem_base
+        self.idx = idx
         # Simply use the current allocation to create a container and get its id
         self.container_id = self._init_container()
 
@@ -43,7 +45,7 @@ class DockerContainer(object):
         self.last_runtime = 0
         self.curr_cost = 0
         self.last_cost = 0
-
+        
         self.update()
 
     def _init_container(self):
@@ -57,7 +59,7 @@ class DockerContainer(object):
                                           memswap_limit=-1)
 
         print("Info: container-%s of image-%s is created, with cpu:%.2f and memory:%d."
-              % (container.short_id, self.image_name, self.cpu_alloc, self.mem_alloc))
+              % (self.idx, self.image_name, self.cpu_alloc, self.mem_alloc))
 
         return container.short_id
 
@@ -87,18 +89,19 @@ class DockerContainer(object):
         # Using the cost model to calculate the cost
         self.last_cost = self.curr_cost
         self.curr_cost = (self.cpu_alloc * cost_model['cpu_para'] +
-                          self.mem_alloc*cost_model['mem_para']) * self.curr_runtime
+                          self.mem_alloc*cost_model['mem_para']) * self.curr_runtime / 1000
 
     def one_step_dealloc(self, cpu_alloc=one_step_cpu, mem_alloc=one_step_mem):
         # Deallocate containers' CPU and memory
         # And update runtime and cost
         if (cpu_alloc > self.cpu_alloc or mem_alloc > self.mem_alloc):
-            print("Error: can't set cpu/memory a negative number.")
-            return
+            print("Warn: can't set cpu/memory a negative number.")
+            return 'cpu/mem_neg_error'
 
         self.cpu_alloc -= cpu_alloc
         self.mem_alloc -= mem_alloc
         wait_complete()
+
         try:
 
             container = client.containers.run(self.image_name,
@@ -112,9 +115,10 @@ class DockerContainer(object):
 
         except:
             print('Error: update failed.')
-            return
+            return 'failed'
 
         self.update()
+        return 'success'
 
     def update(self):
         # Update runtime and cost
@@ -129,9 +133,11 @@ class Workflow(object):
         self.time_limit = slo
 
         self.workflow = []
+        i = 0
         for image in images:
-            container = DockerContainer(image)
+            container = DockerContainer(image, i)
             self.workflow.append(container)
+            i += 1
         # This class has two priority queue
         self.runtime_pq = PriorityQueue()
         self.cost_pq = PriorityQueue()
@@ -186,7 +192,7 @@ class Workflow(object):
                 if type == 'cpu':
 
                     print("Info: allocate cpu to function-%s by %.2f."
-                          % (func.container_id, cpu_base))
+                          % (func.idx, cpu_base))
 
                     func.one_step_dealloc(-cpu_base, 0)
                     # Push into the queue
@@ -197,7 +203,7 @@ class Workflow(object):
                 if type == 'memory':
 
                     print("Info: allocate memory to function-%s by %d."
-                          % (func.container_id, mem_base))
+                          % (func.idx, mem_base))
 
                     func.one_step_dealloc(0, -mem_base)
                     # Push into the queue
@@ -208,22 +214,22 @@ class Workflow(object):
                 runtime += func.curr_runtime - func.last_runtime
 
         except:
-            print("Error: exit")
+            print("Error: max_config failed")
             return
 
         print("\nInfo: after max_config, current configuration:\n")
         for func in self.workflow:
             print("function-%s of image-%s, with cpu:%.2f and memory:%d."
-                  % (func.container_id, func.image_name, func.cpu_alloc, func.mem_alloc))
+                  % (func.idx, func.image_name, func.cpu_alloc, func.mem_alloc))
 
         runtime = self.get_runtime()
-        print("\nInfo: current runtime: %.2f" % (runtime))
+        print("Info: current runtime: %.2f" % (runtime))
 
     def _init_cost_pq(self):
         # Define the element in the cost pq to be {'function': xxx, 'type': xxx}
         for func in self.workflow:
-            item_cpu = {'function': func, 'type': 'cpu'}
-            item_mem = {'function': func, 'type': 'memory'}
+            item_cpu = {'function': func, 'type': 'cpu', 'trial': trial}
+            item_mem = {'function': func, 'type': 'memory', 'trial': trial}
 
             self.cost_pq.push(item_cpu, math.inf)
             self.cost_pq.push(item_mem, math.inf)
@@ -236,10 +242,13 @@ class Workflow(object):
         try:
             runtime = self.get_runtime()
             while runtime < self.time_limit and self.cost_pq.notEmpty():
+
+                cost = self.get_cost()
                 # First get the function with the highest priority
                 item = self.cost_pq.pop()
                 func = item['function']
                 type = item['type']
+                trial = item['trial']
 
                 # According to its type, choose different operation
                 # If slo isn't meet after the deallocation,
@@ -248,36 +257,90 @@ class Workflow(object):
                 if type == 'cpu':
 
                     print("Info: deallocate cpu from function-%s by %.2f."
-                          % (func.container_id, cpu_alloc))
+                          % (func.idx, cpu_alloc))
 
-                    func.one_step_dealloc(cpu_alloc, 0)
-                    if self.get_runtime() > self.time_limit:
-                        print("Runtime is too long! Retrive the deallocation.")
+                    res = func.one_step_dealloc(cpu_alloc, 0)
+                    # Error handler
+                    if res == 'failed':
+                        return 'Error'
+                    elif res == 'cpu/mem_neg_error':
                         func.cpu_alloc += cpu_alloc
-                    elif func.curr_cost > func.last_cost:
+                        continue
+                    # Set two trials if performance doesn't meet expectations
+                    elif self.get_runtime() > self.time_limit:
                         func.cpu_alloc += cpu_alloc
+                        func.one_step_dealloc(0, 0)
+                        if trial > 0:
+                            print("Warn: long runtime.")
+                            trial -= 1
+                        else:
+                            print("Info: out of queue.")
+                            continue
+                    elif self.get_cost() > cost:
+                        func.cpu_alloc += cpu_alloc
+                        func.one_step_dealloc(0, 0)
+                        if trial > 0:
+                            print("Warn: heavy cost.")
+                            trial -= 1
+                        else:
+                            print("Info: out of queue.")
+                            continue
                     else:
-                        item = {'function': func, 'type': type}
-                        priority = func.last_cost - func.curr_cost
-                        self.cost_pq.push(item, priority)
+                        trial = trial
+                    # Put in queue
+                    item = {'function': func, 'type': type, 'trial': trial}
+                    priority = func.last_cost - func.curr_cost
+                    self.cost_pq.push(item, priority)
 
                 if type == 'memory':
 
                     print("Info: deallocate memory from function-%s by %d."
-                          % (func.container_id, mem_alloc))
+                          % (func.idx, mem_alloc))
 
-                    func.one_step_dealloc(0, mem_alloc)
-                    if self.get_runtime() > self.time_limit:
-                        print("Runtime is too long! Retrive the deallocation.")
+                    res = func.one_step_dealloc(0, mem_alloc)
+                    # Error handler
+                    if res == 'failed':
+                        return 'Error'
+                    elif res == 'cpu/mem_neg_error':
                         func.mem_alloc += mem_alloc
-                    elif func.curr_cost > func.last_cost:
+                        continue
+                    # Set two trials if performance doesn't meet expectations
+                    elif self.get_runtime() > self.time_limit:
                         func.mem_alloc += mem_alloc
+                        func.one_step_dealloc(0, 0)
+                        if trial > 0:
+                            print("Warn: long runtime.")
+                            trial -= 1
+                        else:
+                            print("Info: out of queue.")
+                            continue
+                    elif self.get_cost() > cost:
+                        func.mem_alloc += mem_alloc
+                        func.one_step_dealloc(0, 0)
+                        if trial > 0:
+                            print("Warn: heavy cost.")
+                            trial -= 1
+                        else:
+                            print("Info: out of queue.")
+                            continue
                     else:
-                        item = {'function': func, 'type': type}
-                        priority = func.last_cost - func.curr_cost
-                        self.cost_pq.push(item, priority)
+                        trial = trial
+                    # Put queue
+                    item = {'function': func, 'type': type, 'trial': trial}
+                    priority = func.last_cost - func.curr_cost
+                    self.cost_pq.push(item, priority)
+
         except:
-            pass
+            print('Error: configuration failed.')
+            return 'Error'
+
+        print("\nInfo: after min_cost, current configuration:\n")
+        for func in self.workflow:
+            print("function-%s of image-%s, with cpu:%.2f and memory:%d."
+                  % (func.idx, func.image_name, func.cpu_alloc, func.mem_alloc))
 
         cost = self.get_cost()
-        print("Info: current cost is %.2f." % (cost))
+        runtime = self.get_runtime()
+        print("\nInfo: current cost is %.2f." % (cost))
+        print("Info: current runtime: %.2f" % (runtime))
+        return 'success'

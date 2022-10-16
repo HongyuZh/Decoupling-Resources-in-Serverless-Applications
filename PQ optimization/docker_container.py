@@ -94,7 +94,7 @@ class DockerContainer(object):
     def one_step_dealloc(self, cpu_alloc=one_step_cpu, mem_alloc=one_step_mem):
         # Deallocate containers' CPU and memory
         # And update runtime and cost
-        if (cpu_alloc > self.cpu_alloc or mem_alloc > self.mem_alloc):
+        if cpu_alloc > self.cpu_alloc or mem_alloc > self.mem_alloc:
             print("Warn: can't set cpu/memory a negative number.")
             return 'cpu/mem_neg_error'
 

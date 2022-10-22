@@ -8,9 +8,7 @@ def PQ_optimization(images, slo):
 
     print("Initializing workflow...\n")
     DAG = Workflow(images, slo)
-    print("Initialization complete!\n")
 
-    print("Configuration starts!\n")
     res = DAG.min_cost()
     if res == 'Error':
         print("\nConfiguration failed!")

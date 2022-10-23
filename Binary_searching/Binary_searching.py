@@ -57,7 +57,7 @@ def Bs_cpu(cpu,trail,slo):
         execution_cnt += 1
     return cpu_m
 
-def Bs_memory(trail,slo,memory):
+def Bs_memory(trail,slo,memory,cpu_m):
     memory_l = 6
     memory_r = memory
     memory_m = 6
@@ -72,7 +72,7 @@ def Bs_memory(trail,slo,memory):
        
         # define the setup
 
-        container = client.containers.run(image_name, detach=True, mem_limit=f'{memory_m}M', memswap_limit=-1)
+        container = client.containers.run(image_name, detach=True, mem_limit=f'{memory_m}M', cpu_period=100000, cpu_quota=int(100000*cpu_m), memswap_limit=-1)
                                           
         container_name = container.short_id 
 
@@ -95,5 +95,5 @@ def Bs_memory(trail,slo,memory):
 if __name__ == '__main__':
     CPU = Bs_cpu(cpu,trail,slo)
     print(CPU)
-    MEM = Bs_memory(trail,slo,memory)
+    MEM = Bs_memory(trail,slo,memory,CPU)
     print(MEM)

@@ -3,4 +3,4 @@ images:
   - {'name': 'chameleon','tag':'v1'}
   - {'name': 'linpack','tag':'v1'}
   
-slo: 80000
+slo: 1000

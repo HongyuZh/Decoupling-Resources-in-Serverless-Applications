@@ -2,5 +2,9 @@ images:
   - {'name': 'matmul','tag':'v1'}
   - {'name': 'chameleon','tag':'v1'}
   - {'name': 'linpack','tag':'v1'}
+  - {'name': 'pyaes','tag':'v1'}
+  - {'name': 'float_operation','tag':'v1'}
   
-slo: 1000
+slo: 1850
+
+exe_times: 20

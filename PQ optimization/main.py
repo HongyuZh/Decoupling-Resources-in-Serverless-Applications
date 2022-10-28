@@ -1,19 +1,20 @@
 import argparse
+import math
 
 import numpy as np
 import yaml
+import os
 
 from docker_container import *
 
-one_step_cpu = 0.25
-one_step_mem = 16
-_trial_ = 1
+_trial = 2
+_failed = 2
 error = 0.05
 
 result = {}
 
 
-def init_runtime_pq(DAG):
+def init_runtime_pq(DAG: Workflow):
     # Define the element in the runtime pq to be {'function': xxx, 'type': xxx}
     for func in DAG.workflow:
 
@@ -23,20 +24,19 @@ def init_runtime_pq(DAG):
         DAG.runtime_pq.push(item_cpu, math.inf)
         DAG.runtime_pq.push(item_mem, math.inf)
 
-    for fun in DAG.workflow:
-        fun._run_and_set_runtime()
-        fun._set_cost()
+    for func in DAG.workflow:
+        func.update()
+        print('Function-%s runtime: %.2fms.' % (func.id, func.curr_runtime))
 
+    update(DAG)
     runtime = DAG.get_runtime()
 
-    print('\nInfo: current runtime:%.2f.\n' %
+    print('Runtime of the workflow: %.2fms.\n' %
           (runtime))
 
 
-def max_config(DAG):
-    runtime = DAG.get_runtime()
-
-    while runtime > DAG.time_limit:
+def max_config(DAG: Workflow):
+    while DAG.get_runtime() > DAG.time_limit:
         # First get the function with the highest priority
         item = DAG.runtime_pq.pop()
         func = item['function']
@@ -44,8 +44,7 @@ def max_config(DAG):
         # Increase the resources until we meet the SLO
         # According to its type, choose different operation
         if type == 'cpu':
-
-            print("Info: allocate cpu to function-%s by %.2f."
+            print("\nAllocate cpu to function-%s by %.2f."
                   % (func.id, cpu_base))
 
             func.one_step_dealloc(-cpu_base, 0)
@@ -59,8 +58,7 @@ def max_config(DAG):
             DAG.runtime_pq.push(item, prioirty)
 
         if type == 'memory':
-
-            print("Info: allocate memory to function-%s by %d."
+            print("\nAllocate memory to function-%s by %d."
                   % (func.id, mem_base))
 
             func.one_step_dealloc(0, -mem_base)
@@ -74,35 +72,31 @@ def max_config(DAG):
             DAG.runtime_pq.push(item, prioirty)
 
         runtime = DAG.get_runtime()
-        print('Info: current runtime: %.2f.' % (runtime))
+        print('Current runtime of the workflow: %.2fms.' % (runtime))
         update(DAG)
 
-    print("\nInfo: after max_config, current configuration:\n")
+    print("\nAfter max_config, current configuration:")
 
     for func in DAG.workflow:
-        print("function-%s of image-%s, with cpu:%.2f and memory:%d."
+        print("Function-%s of image-%s, with cpu:%.2f and memory:%d."
               % (func.id, func.image_id, func.cpu_alloc, func.mem_alloc))
 
-    runtime = DAG.get_runtime()
-    print("Info: current runtime: %.2f" % (runtime))
 
-
-def init_cost_pq(DAG):
+def init_cost_pq(DAG: Workflow):
     # Define the element in the cost pq to be {'function': xxx, 'type': xxx}
     for func in DAG.workflow:
-        item_cpu = {'function': func, 'type': 'cpu', 'trial': _trial_}
-        item_mem = {'function': func, 'type': 'memory', 'trial': _trial_}
+        item_cpu = {'function': func, 'type': 'cpu', 'trial': _trial}
+        item_mem = {'function': func, 'type': 'memory', 'trial': _trial}
 
         DAG.cost_pq.push(item_cpu, math.inf)
         DAG.cost_pq.push(item_mem, math.inf)
 
     cost = DAG.get_cost()
+    print('\nCost_pq has been initialized. Current cost is %.2f.\n' % (cost))
 
-    print('\nInfo: Cost_pq has been initialized. Current cost is %.2f.\n' % (cost))
 
-
-def min_cost(DAG, cpu_alloc=one_step_cpu, mem_alloc=one_step_mem):
-    print('Info: Min_cost config starts\n')
+def min_cost(DAG: Workflow):
+    print('Min_cost config starts\n')
     last_cost = DAG.get_cost()
     last_runtime = DAG.get_runtime()
 
@@ -120,48 +114,48 @@ def min_cost(DAG, cpu_alloc=one_step_cpu, mem_alloc=one_step_mem):
         # and the function won't come back to the queue again
         if type == 'cpu':
 
-            print("Info: try to deallocate cpu from function-%s by %.2f."
-                  % (func.id, cpu_alloc))
+            print("\nTry to deallocate cpu from function-%s by %.2f."
+                  % (func.id, one_step_cpu))
 
-            if func.cpu_alloc > cpu_alloc:
-                func.one_step_dealloc(cpu_alloc, 0)
+            if func.cpu_alloc > one_step_cpu:
+                func.one_step_dealloc(one_step_cpu, 0)
             else:
                 continue
 
+            update(DAG)
             cost = DAG.get_cost()
             runtime = DAG.get_runtime()
 
-            # Set two trials if performance doesn't meet expectations
+            # Set several trials if performance doesn't meet expectations
             if runtime > DAG.time_limit:
-                print("Warn: long runtime. (runtime: %.2f)" %
+                print("Long runtime, retrive configuration. (runtime: %.2fms)" %
                       (runtime))
-                update(DAG)
-                cnt = _trial_
-                while runtime > DAG.time_limit and cnt >= 0:
-                    func.one_step_dealloc(-cpu_alloc, 0)
+
+                cnt = _failed
+                while runtime > DAG.time_limit and cnt > 0:
+                    func.one_step_dealloc(-one_step_cpu, 0)
                     runtime = DAG.get_runtime()
-                    update(DAG)
+                    print('Current runtime of the workflow: %.2f' % (runtime))
                     cnt -= 1
+                    update(DAG)
+
                 if trial > 0:
                     trial -= 1
                     item = {'function': func, 'type': type, 'trial': trial}
                     priority = 0
                     DAG.cost_pq.push(item, priority)
                 else:
-                    print("Info: function-%d type-%s out of queue." %
+                    print("Put function-%d type-%s out of queue." %
                           (func.id, type))
                     continue
-
             elif cost > last_cost*(1+error):
-                print("Warn: heavy cost. (cost: %.2f)" %
+                print("Heavy cost, retrive configuration. (cost: %.2f)" %
                       (cost))
-                update(DAG)
 
-                func.one_step_dealloc(-cpu_alloc, 0)
+                func.one_step_dealloc(-one_step_cpu, 0)
                 cost = DAG.get_cost()
+                print('Current cost: %.2f.' % (cost))
                 update(DAG)
-
-                print('Info: current cost: %.2f.' % (cost))
 
                 if trial > 0:
                     trial -= 1
@@ -169,12 +163,12 @@ def min_cost(DAG, cpu_alloc=one_step_cpu, mem_alloc=one_step_mem):
                     priority = 0
                     DAG.cost_pq.push(item, priority)
                 else:
-                    print("Info: function-%d type-%s out of queue." %
+                    print("Put function-%d type-%s out of queue." %
                           (func.id, type))
                     continue
             else:
-                print('Info: complete. current cost: %.2f' % (cost))
-                trial = _trial_
+                print('Complete. current cost: %.2f' % (cost))
+                trial = _trial
                 # Put in queue
                 item = {'function': func, 'type': type, 'trial': trial}
                 if cost < last_cost:
@@ -186,30 +180,32 @@ def min_cost(DAG, cpu_alloc=one_step_cpu, mem_alloc=one_step_mem):
                 last_runtime = runtime
                 update(DAG)
 
-        if type == 'memory':
+        elif type == 'memory':
 
-            print("Info: try to deallocate mem from function-%s by %.2f."
-                  % (func.id, mem_alloc))
+            print("\nTry to deallocate mem from function-%s by %.2f."
+                  % (func.id, one_step_mem))
 
-            if func.mem_alloc > mem_alloc:
-                func.one_step_dealloc(0, mem_alloc)
+            if func.mem_alloc > one_step_mem:
+                func.one_step_dealloc(0, one_step_mem)
             else:
                 continue
 
+            update(DAG)
             cost = DAG.get_cost()
             runtime = DAG.get_runtime()
 
             # Set two trials if performance doesn't meet expectations
             if runtime > DAG.time_limit:
-                print("Warn: long runtime. (runtime: %.2f)" %
+                print("Long runtime, retrive configuration. (runtime: %.2fms)" %
                       (runtime))
-                update(DAG)
-                cnt = _trial_
+
+                cnt = _failed
                 while runtime > DAG.time_limit and cnt >= 0:
-                    func.one_step_dealloc(0, -mem_alloc)
+                    func.one_step_dealloc(0, -one_step_mem)
                     runtime = DAG.get_runtime()
-                    update(DAG)
+                    print('Current runtime of the workflow: %.2f' % (runtime))
                     cnt -= 1
+                    update(DAG)
 
                 if trial > 0:
                     trial -= 1
@@ -217,19 +213,19 @@ def min_cost(DAG, cpu_alloc=one_step_cpu, mem_alloc=one_step_mem):
                     priority = 0
                     DAG.cost_pq.push(item, priority)
                 else:
-                    print("Info: function-%d type-%s out of queue." %
+                    print("Put function-%d type-%s out of queue." %
                           (func.id, type))
                     continue
 
             elif cost > last_cost*(1+error):
-                print("Warn: heavy cost. (cost: %.2f)" %
+                print("Heavy cost, retrive configuration. (cost: %.2f)" %
                       (cost))
-                update(DAG)
 
-                func.one_step_dealloc(0, -mem_alloc)
+                func.one_step_dealloc(0, -one_step_mem)
                 cost = DAG.get_cost()
+                print('Current cost: %.2f.' % (cost))
                 update(DAG)
-                print('Info: current cost: %.2f.' % (cost))
+                last_cost = cost
 
                 if trial > 0:
                     trial -= 1
@@ -237,12 +233,12 @@ def min_cost(DAG, cpu_alloc=one_step_cpu, mem_alloc=one_step_mem):
                     priority = 0
                     DAG.cost_pq.push(item, priority)
                 else:
-                    print("Info: function-%d type-%s out of queue." %
+                    print("Put function-%d type-%s out of queue." %
                           (func.id, type))
                     continue
             else:
-                print('Info: complete. current cost: %.2f' % (cost))
-                trial = _trial_
+                print('Complete. current cost: %.2f' % (cost))
+                trial = _trial
                 # Put in queue
                 item = {'function': func, 'type': type, 'trial': trial}
                 if cost < last_cost:
@@ -254,43 +250,44 @@ def min_cost(DAG, cpu_alloc=one_step_cpu, mem_alloc=one_step_mem):
                 last_runtime = runtime
                 update(DAG)
 
-    print("\nInfo: after min_cost, current configuration:\n")
+    print("\nAfter min_cost, current configuration:")
     for func in DAG.workflow:
         print("function-%s of image-%s, with cpu:%.2f and memory:%d."
               % (func.id, func.image_id, func.cpu_alloc, func.mem_alloc))
 
-    print("\nInfo: current cost is %.2f." % (last_cost))
-    print("Info: current runtime: %.2f" % (last_runtime))
-    return 'success'
+    print("\n current cost is %.2f." % (last_cost))
+    print(" current runtime: %.2f" % (last_runtime))
 
 
-def update(DAG):
+def update(DAG: Workflow):
     for i in range(0, len(DAG.workflow)):
         function = result['function'][i]
-        container = DAG.workflow[i]
-        function['cpu'].append(container.cpu_alloc)
-        function['mem'].append(container.mem_alloc)
+        item = DAG.workflow[i]
+        function['cpu'].append(item.cpu_alloc)
+        function['mem'].append(item.mem_alloc)
 
     result['runtime'].append(DAG.get_runtime())
     result['cost'].append(DAG.get_cost())
 
 
 def upload():
+    if not os.path.exists('results'):
+        os.makedirs('results')
+
     function = result['function']
     for i in range(0, len(function)):
         cpu = np.array(function[i]['cpu'])
         mem = np.array(function[i]['mem'])
-        np.savetxt(f'results/function-{i}-cpu.yaml', cpu, fmt='%.2f')
-        np.savetxt(f'results/function-{i}-mem.yaml', mem, fmt='%d')
+        np.savetxt(f'results/function-{i}-cpu.txt', cpu, fmt='%.2f')
+        np.savetxt(f'results/function-{i}-mem.txt', mem, fmt='%d')
 
     runtime = np.array(result['runtime'])
     cost = np.array(result['cost'])
-    np.savetxt(f'results/runtime.yaml', runtime, fmt='%.2f')
-    np.savetxt(f'results/cost.yaml', cost, fmt='%.2f')
+    np.savetxt(f'results/runtime.txt', runtime, fmt='%.2f')
+    np.savetxt(f'results/cost.txt', cost, fmt='%.2f')
 
 
 def PQ_optimization(images, slo):
-
     print("Initializing workflow...\n")
     DAG = Workflow(images, slo)
     update(DAG)
@@ -298,41 +295,45 @@ def PQ_optimization(images, slo):
     init_runtime_pq(DAG)
     max_config(DAG)
     init_cost_pq(DAG)
-    res = min_cost(DAG)
+    min_cost(DAG)
 
-    if res == 'Error':
-        print("\nConfiguration failed!")
-    else:
-        print("\nConfiguration completed!")
+    print("\nConfiguration complete.")\
+
+    for i in range(0, exe_times):
+        for func in DAG.workflow:
+            func.update()
+        update(DAG)
+        print(f'Execution {i} completed.')
 
 
 if __name__ == '__main__':
     # Get configuration
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', help='config file', required=True)
-
     args = parser.parse_args()
 
     config_file = args.config
     with open(config_file, 'r', encoding='utf-8') as f:
         cfgs = yaml.safe_load(f)
 
-    slo = cfgs['slo']
+    slo = cfgs['slo'] - 100
     image_names = []
     for ele in cfgs['images']:
         image_names.append(f'{ele["name"]}:{ele["tag"]}')
+    global exe_times
+    exe_times = cfgs['exe_times']
 
     result['function'] = []
     for i in range(0, len(image_names)):
         function = {}
         function['cpu'] = []
         function['mem'] = []
-        function['runtime'] = []
         result['function'].append(function)
 
     result['runtime'] = []
     result['cost'] = []
 
     PQ_optimization(image_names, slo)
-
     upload()
+
+    

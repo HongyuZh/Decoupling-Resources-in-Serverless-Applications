@@ -1,132 +1,154 @@
-from cProfile import label
-from cmath import cos
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+
+import argparse
 import yaml
 
 parameters = {
     'axes.labelsize': 32,
     'xtick.labelsize': 32,
     'ytick.labelsize': 32,
-    'legend.fontsize': 28,
+    'legend.fontsize': 24,
     'figure.figsize': [15, 10],
-    'font.sans-serif': 'Arial'
 }
 plt.rcParams.update(parameters)
+mcolor = ['orange', 'green', 'purple', 'cyan', 'grey', 'blue', 'violet']
 
 
-def plot_cpu(fig_name, fun_1, fun_2, fun_3):
+def plot_cpu(fig_name, cpu_alloction):
     fig, ax = plt.subplots()
 
-    ax.set_xticks(np.arange(0, fun_1.size, 8))
+    ax.set_xticks(
+        np.arange(0, cpu_alloction[0].size-exe_times, (cpu_alloction[0].size-exe_times)//12))
     ax.set_xlabel('Config Steps')
     ax.set_ylabel('Allocated CPU')
 
-    lower = min(np.min(fun_1), np.min(fun_2), np.min(fun_3))
-    upper = max(np.max(fun_1), np.max(fun_2), np.max(fun_3))
+    lower = np.min(cpu_alloction[0])
+    upper = np.max(cpu_alloction[0])
+    for i in range(1, len(cpu_alloction)):
+        if np.min(cpu_alloction[i]) < lower:
+            lower = np.min(cpu_alloction[i])
+        if np.max(cpu_alloction[i]) > upper:
+            upper = np.max(cpu_alloction[i])
 
     ax.set_ylim(lower//10*10, upper+1)
 
-    ax.plot(np.arange(fun_1.size), fun_1,
-            linewidth=9, ms=24, color='orange')
-    ax.plot(np.arange(fun_2.size), fun_2,
-            linewidth=9, ms=24, color='green')
-    ax.plot(np.arange(fun_3.size), fun_3,
-            linewidth=9, ms=24, color='purple')
+    legends = []
+    for i in range(0, len(cpu_alloction)):
+        ax.plot(np.arange(cpu_alloction[i].size-exe_times), cpu_alloction[i][0:cpu_alloction[i].size-exe_times],
+                linewidth=6, ms=24, color=mcolor[i])
+        legends.append(f'func {i+1}')
 
-    ax.legend(['func 1', 'func 2', 'func 3'], loc='upper right')
+    ax.legend(legends, loc='upper right')
 
     plt.grid(axis='y')
-    if not os.path.exists('plot'):
-        os.makedirs('plot')
-    plt.savefig(f'plot/{fig_name}.pdf')
+    if not os.path.exists('plots'):
+        os.makedirs('plots')
+    plt.savefig(f'plots/{fig_name}.pdf')
 
 
-def plot_mem(fig_name, fun_1, fun_2, fun_3):
+def plot_mem(fig_name, mem_alloction):
     fig, ax = plt.subplots()
 
-    ax.set_xticks(np.arange(0, fun_1.size, 8))
+    ax.set_xticks(
+        np.arange(0, mem_alloction[0].size-exe_times, (mem_alloction[0].size-exe_times)//12))
     ax.set_xlabel('Config Steps')
-    ax.set_ylabel('Allocated Memory (MB)')
+    ax.set_ylabel('Allocated Memory')
 
-    lower = min(np.min(fun_1), np.min(fun_2), np.min(fun_3))
-    upper = max(np.max(fun_1), np.max(fun_2), np.max(fun_3))
+    lower = np.min(mem_alloction[0])
+    upper = np.max(mem_alloction[0])
+    for i in range(1, len(mem_alloction)):
+        if np.min(mem_alloction[i]) < lower:
+            lower = np.min(mem_alloction[i])
+        if np.max(mem_alloction[i]) > upper:
+            upper = np.max(mem_alloction[i])
 
-    ax.set_ylim(lower//10*10, (upper//10+1)*10)
+    ax.set_ylim((lower//10-1)*10, (upper//20+2)*20)
 
-    ax.plot(np.arange(fun_1.size), fun_1,
-            linewidth=9, ms=24, color='orange')
-    ax.plot(np.arange(fun_2.size), fun_2,
-            linewidth=9, ms=24, color='green')
-    ax.plot(np.arange(fun_3.size), fun_3,
-            linewidth=9, ms=24, color='purple')
+    legends = []
+    for i in range(0, len(mem_alloction)):
+        ax.plot(np.arange(mem_alloction[i].size-exe_times), mem_alloction[i][0:cpu_alloction[i].size-exe_times],
+                linewidth=6, ms=24, color=mcolor[i])
+        legends.append(f'func {i+1}')
 
-    ax.legend(['func 1', 'func 2', 'func 3'], loc='upper right')
+    ax.legend(legends, loc='upper right')
 
     plt.grid(axis='y')
-    if not os.path.exists('plot'):
-        os.makedirs('plot')
-    plt.savefig(f'plot/{fig_name}.pdf')
+    if not os.path.exists('plots'):
+        os.makedirs('plots')
+    plt.savefig(f'plots/{fig_name}.pdf')
 
 
-def plot_runtime(fig_name, runtime):
-    fig, ax = plt.subplots()
+def plot_runtime_and_cost(fig_name, runtime, cost, slo):
+    fig, ax1 = plt.subplots()
 
-    ax.set_xticks(np.arange(0, runtime.size, 8))
-    ax.set_xlabel('Config Steps')
-    ax.set_ylabel('Runtime (ms)')
-    ax.set_ylim(np.min(runtime)//10*10, (np.max(runtime)//10+1)*10)
-    ax.axhline(y=1000, linestyle='dotted', label='SLO',
-               linewidth=6, color='#d62728')
+    ax1.set_xticks(np.arange(0, runtime.size, runtime.size//12))
+    ax1.set_xlabel('Steps')
+    ax1.set_ylabel('Runtime (ms)')
+    ax1.set_ylim((np.min(runtime)//100-6)*100, (np.max(runtime)//100+6)*100)
+    ax1.axvline(x=runtime.size-exe_times-1, linestyle='dashed',
+                label='completed', linewidth=4, color='#d62728')
+    ax1.axhline(y=slo, linestyle='dotted', label='SLO',
+                linewidth=4, color='#d62728')
 
-    ax.plot(np.arange(runtime.size), runtime,
-            linewidth=9, ms=24, color='orange')
+    ax1.plot(np.arange(runtime.size-exe_times), runtime[0:runtime.size-exe_times],
+             linewidth=5, ms=24, color='gold')
+    ax1.plot(np.arange(runtime.size-exe_times-1, runtime.size), runtime[runtime.size-exe_times-1:runtime.size],
+             linewidth=5, ms=24, color='orange')
 
-    ax.legend(['SLO', 'runtime'], loc='upper right')
-	
-    plt.grid(axis='y')
-    if not os.path.exists('plot'):
-        os.makedirs('plot')
-    plt.savefig(f'plot/{fig_name}.pdf')
+    ax1.legend(['slo', 'cfg', 'cfg runtime',
+               'exe runtime'], loc='upper center')
 
+    ax2 = ax1.twinx()
 
-def plot_cost(fig_name, cost):
-    fig, ax = plt.subplots()
+    ax2.set_ylabel('Cost')
+    ax2.set_ylim((np.min(cost)//10-2)*10, (np.max(cost)//10+3)*10)
+    ax2.plot(np.arange(cost.size-exe_times), cost[0:runtime.size-exe_times],
+             linewidth=5, ms=24, color='lightseagreen')
+    ax2.plot(np.arange(cost.size-exe_times-1, cost.size), cost[runtime.size-exe_times-1:cost.size],
+             linewidth=5, ms=24, color='green')
 
-    ax.set_xticks(np.arange(0, cost.size, 8))
-    ax.set_xlabel('Config Steps')
-    ax.set_ylabel('Cost')
-    ax.set_ylim(np.min(cost)//10*10, (np.max(cost)//10+1)*10)
-
-    ax.plot(np.arange(cost.size), cost,
-            linewidth=9, ms=24, color='orange')
-
-    ax.legend(['cost'], loc='upper right')
+    ax2.legend(['cfg cost', 'exe cost'], loc='upper left')
 
     plt.grid(axis='y')
-    if not os.path.exists('plot'):
-        os.makedirs('plot')
-    plt.savefig(f'plot/{fig_name}.pdf')
+    if not os.path.exists('plots'):
+        os.makedirs('plots')
+    plt.savefig(f'plots/{fig_name}.pdf')
 
 
 if __name__ == '__main__':
-    funcs = ['function-0', 'function-1', 'function-2']
-    resource = ['cpu', 'mem']
-    data = {'cpu': {}, 'mem': {}}
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--config', help='config file', required=True)
 
-    for res in resource:
-        for func in funcs:
-            file_name = f'results/{func}-{res}.yaml'
-            data[res][func] = np.loadtxt(file_name)[1:]
+    args = parser.parse_args()
 
-    runtime = np.loadtxt('results/runtime.yaml')[1:]
-    cost = np.loadtxt('results/cost.yaml')[1:]
+    config_file = args.config
+    with open(config_file, 'r', encoding='utf-8') as f:
+        cfgs = yaml.safe_load(f)
 
+    slo = cfgs['slo']
+    nums = len(cfgs['images'])
+    global exe_times
+    exe_times = cfgs['exe_times']
 
-    plot_cpu('CPU allocation', data['cpu']['function-0'], data['cpu']
-         ['function-1'], data['cpu']['function-2'])
-    plot_mem('Memory allocation', data['mem']['function-0'], data['mem']
-         ['function-1'], data['mem']['function-2'])
-    plot_runtime('Runtime', runtime)
-    plot_cost('Cost', cost)
+    functions = []
+    for i in range(0, nums):
+        functions.append(f'function-{i}')
+    cpu_alloction = []
+    mem_alloction = []
+
+    for func in functions:
+        file_name = f'results/{func}-cpu.txt'
+        alloc = np.loadtxt(file_name)[1:]
+        cpu_alloction.append(alloc)
+        file_name = f'results/{func}-mem.txt'
+        alloc = np.loadtxt(file_name)[1:]
+        mem_alloction.append(alloc)
+
+    runtime = np.loadtxt('results/runtime.txt')[1:]
+    cost = np.loadtxt('results/cost.txt')[1:]
+
+    plot_cpu('CPU Allocation', cpu_alloction)
+    plot_mem('Memory Allocation', mem_alloction)
+    plot_runtime_and_cost('Runtime And Cost', runtime, cost, slo)

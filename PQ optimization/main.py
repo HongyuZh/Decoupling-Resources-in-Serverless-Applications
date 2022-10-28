@@ -10,6 +10,7 @@ from docker_container import *
 _trial = 2
 _failed = 2
 error = 0.05
+margin = 100
 
 result = {}
 
@@ -316,7 +317,7 @@ if __name__ == '__main__':
     with open(config_file, 'r', encoding='utf-8') as f:
         cfgs = yaml.safe_load(f)
 
-    slo = cfgs['slo'] - 100
+    slo = cfgs['slo'] - margin
     image_names = []
     for ele in cfgs['images']:
         image_names.append(f'{ele["name"]}:{ele["tag"]}')
@@ -335,5 +336,3 @@ if __name__ == '__main__':
 
     PQ_optimization(image_names, slo)
     upload()
-
-    

@@ -255,8 +255,8 @@ def min_cost(DAG: Workflow):
         print("function-%s of image-%s, with cpu:%.2f and memory:%d."
               % (func.id, func.image_id, func.cpu_alloc, func.mem_alloc))
 
-    print("\n current cost is %.2f." % (last_cost))
-    print(" current runtime: %.2f" % (last_runtime))
+    print("\nCurrent cost is %.2f." % (last_cost))
+    print("Current runtime: %.2f" % (last_runtime))
 
 
 def update(DAG: Workflow):

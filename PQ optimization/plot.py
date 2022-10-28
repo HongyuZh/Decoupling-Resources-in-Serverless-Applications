@@ -6,9 +6,9 @@ import argparse
 import yaml
 
 parameters = {
-    'axes.labelsize': 32,
-    'xtick.labelsize': 32,
-    'ytick.labelsize': 32,
+    'axes.labelsize': 28,
+    'xtick.labelsize': 28,
+    'ytick.labelsize': 28,
     'legend.fontsize': 24,
     'figure.figsize': [15, 10],
 }
@@ -20,7 +20,7 @@ def plot_cpu(fig_name, cpu_alloction):
     fig, ax = plt.subplots()
 
     ax.set_xticks(
-        np.arange(0, cpu_alloction[0].size-exe_times, (cpu_alloction[0].size-exe_times)//12))
+        np.arange(0, cpu_alloction[0].size-exe_times, (cpu_alloction[0].size-exe_times)//8))
     ax.set_xlabel('Config Steps')
     ax.set_ylabel('Allocated CPU')
 
@@ -52,9 +52,9 @@ def plot_mem(fig_name, mem_alloction):
     fig, ax = plt.subplots()
 
     ax.set_xticks(
-        np.arange(0, mem_alloction[0].size-exe_times, (mem_alloction[0].size-exe_times)//12))
+        np.arange(0, mem_alloction[0].size-exe_times, (mem_alloction[0].size-exe_times)//8))
     ax.set_xlabel('Config Steps')
-    ax.set_ylabel('Allocated Memory')
+    ax.set_ylabel('Allocated Memory (MB)')
 
     lower = np.min(mem_alloction[0])
     upper = np.max(mem_alloction[0])
@@ -83,12 +83,12 @@ def plot_mem(fig_name, mem_alloction):
 def plot_runtime_and_cost(fig_name, runtime, cost, slo):
     fig, ax1 = plt.subplots()
 
-    ax1.set_xticks(np.arange(0, runtime.size, runtime.size//12))
+    ax1.set_xticks(np.arange(0, runtime.size, runtime.size//8))
     ax1.set_xlabel('Steps')
     ax1.set_ylabel('Runtime (ms)')
     ax1.set_ylim((np.min(runtime)//100-6)*100, (np.max(runtime)//100+6)*100)
     ax1.axvline(x=runtime.size-exe_times-1, linestyle='dashed',
-                label='completed', linewidth=4, color='#d62728')
+                label='completed', linewidth=3, color='#d62728')
     ax1.axhline(y=slo, linestyle='dotted', label='SLO',
                 linewidth=4, color='#d62728')
 
@@ -98,7 +98,7 @@ def plot_runtime_and_cost(fig_name, runtime, cost, slo):
              linewidth=5, ms=24, color='orange')
 
     ax1.legend(['slo', 'cfg', 'cfg runtime',
-               'exe runtime'], loc='upper center')
+               'exe runtime'], loc='upper right')
 
     ax2 = ax1.twinx()
 
@@ -109,7 +109,7 @@ def plot_runtime_and_cost(fig_name, runtime, cost, slo):
     ax2.plot(np.arange(cost.size-exe_times-1, cost.size), cost[runtime.size-exe_times-1:cost.size],
              linewidth=5, ms=24, color='green')
 
-    ax2.legend(['cfg cost', 'exe cost'], loc='upper left')
+    ax2.legend(['cfg cost', 'exe cost'], loc='upper center')
 
     plt.grid(axis='y')
     if not os.path.exists('plots'):

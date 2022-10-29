@@ -13,7 +13,8 @@ parameters = {
     'figure.figsize': [15, 10],
 }
 plt.rcParams.update(parameters)
-mcolor = ['orange', 'green', 'purple', 'cyan', 'grey', 'blue', 'violet']
+mcolor = ['orange', 'green', 'purple', 'violet',
+          'chocolate', 'cyan', 'grey', 'blue']
 
 
 def plot_cpu(fig_name, cpu_alloction):
@@ -37,7 +38,7 @@ def plot_cpu(fig_name, cpu_alloction):
     legends = []
     for i in range(0, len(cpu_alloction)):
         ax.plot(np.arange(cpu_alloction[i].size-exe_times), cpu_alloction[i][0:cpu_alloction[i].size-exe_times],
-                linewidth=6, ms=24, color=mcolor[i])
+                linewidth=5, ms=24, color=mcolor[i])
         legends.append(f'func {i+1}')
 
     ax.legend(legends, loc='upper right')
@@ -69,7 +70,7 @@ def plot_mem(fig_name, mem_alloction):
     legends = []
     for i in range(0, len(mem_alloction)):
         ax.plot(np.arange(mem_alloction[i].size-exe_times), mem_alloction[i][0:cpu_alloction[i].size-exe_times],
-                linewidth=6, ms=24, color=mcolor[i])
+                linewidth=5, ms=24, color=mcolor[i])
         legends.append(f'func {i+1}')
 
     ax.legend(legends, loc='upper right')

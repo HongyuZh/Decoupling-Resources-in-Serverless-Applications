@@ -6,10 +6,10 @@ import argparse
 import yaml
 
 parameters = {
-    'axes.labelsize': 28,
-    'xtick.labelsize': 28,
-    'ytick.labelsize': 28,
-    'legend.fontsize': 24,
+    'axes.labelsize': 25,
+    'xtick.labelsize': 25,
+    'ytick.labelsize': 25,
+    'legend.fontsize': 22,
     'figure.figsize': [15, 10],
 }
 plt.rcParams.update(parameters)
@@ -118,6 +118,36 @@ def plot_runtime_and_cost(fig_name, runtime, cost, slo):
     plt.savefig(f'plots/{fig_name}.pdf')
 
 
+def plot_comparison(runtime_1, runtime_2, cost_1, cost_2):
+    fig, (ax1, ax2) = plt.subplots(1, 2)
+    x_label = ['3-function', '5-function']
+    x_ticks = [0.35, 0.65]
+    bar_width = 0.05
+
+    x_1 = [i-bar_width/2 for i in x_ticks]
+    x_2 = [i+bar_width/2 for i in x_ticks]
+
+    ax1.set_xticks(x_ticks, x_label)
+    ax1.set_ylabel('Runtime (ms)')
+    ax1.bar(x_1, runtime_1, width=bar_width,
+            label='fix_prop', color='orange')
+    ax1.bar(x_2, runtime_2, width=bar_width, label='ARCSA', color='green')
+    ax1.legend(loc='upper left')
+
+    ax2.set_xticks(x_ticks, x_label)
+    ax2.set_ylabel('Cost')
+    ax2.bar(x_1, cost_1, width=bar_width,
+            label='fix_prop', color='orange')
+    ax2.bar(x_2, cost_2, width=bar_width, label='ARCSA', color='green')
+    ax2.legend(loc='upper left')
+
+    plt.subplots_adjust(wspace=0.4)
+
+    if not os.path.exists('plots'):
+        os.makedirs('plots')
+    plt.savefig('plots/comp_cost_and_runtime.pdf')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', help='config file', required=True)
@@ -153,3 +183,6 @@ if __name__ == '__main__':
     plot_cpu('CPU Allocation', cpu_alloction)
     plot_mem('Memory Allocation', mem_alloction)
     plot_runtime_and_cost('Runtime And Cost', runtime, cost, slo)
+
+    plot_comparison(np.array([747, 1739.67]), np.array(
+        [680.33, 1721.67]), np.array([335.75, 1033.60]), np.array([124.04, 279.92]))
